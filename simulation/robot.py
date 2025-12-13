@@ -14,7 +14,7 @@ PIXELS_PER_CM = 7
 # Robot physical properties (meters)
 ROBOT_WIDTH_M = 0.20
 ROBOT_HEIGHT_M = 0.15
-WHEEL_RADIUS_M = 0.05
+WHEEL_RADIUS_M = 0.02
 WHEEL_DISTANCE_M = 0.15
 MAX_WHEEL_SPEED_DEG_PER_S = 4000
 COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT = ROBOT_WIDTH_M/2 +0.01
@@ -79,9 +79,19 @@ class Input:
         pixel_x = dx * 100 * PIXELS_PER_CM
         pixel_y = dy * 100 * PIXELS_PER_CM
         theta = self.robot.theta
-        world_x = self.robot.x + pixel_x * math.cos(theta) - pixel_y * math.sin(theta)
-        world_y = self.robot.y + pixel_x * math.sin(theta) + pixel_y * math.cos(theta)
+        world_x = meters_to_pixels(self.robot.x_m) + pixel_x * math.cos(theta) - pixel_y * math.sin(theta)
+        world_y = meters_to_pixels(self.robot.y_m) + pixel_x * math.sin(theta) + pixel_y * math.cos(theta)
         return world_x, world_y, self.theta + self.robot.theta
+    
+    def get_position(self):
+        dx, dy = self.position 
+        with data_lock:
+            rx, ry, r_theta = self.robot.x_m, self.robot.y_m, self.robot.theta
+        
+        world_x = rx + dx * math.cos(r_theta) - dy * math.sin(r_theta)
+        world_y = ry + dx * math.sin(r_theta) + dy * math.cos(r_theta)
+        # Zwraca orientację czujnika względem świata
+        return world_x, world_y, self.theta + r_theta
 
 # ===========================
 # OUTPUT / WHEEL CLASS
@@ -111,8 +121,8 @@ class Output:
         pixel_x = dx * 100 * PIXELS_PER_CM
         pixel_y = dy * 100 * PIXELS_PER_CM
         theta = self.robot.theta
-        world_x = self.robot.x + pixel_x * math.cos(theta) - pixel_y * math.sin(theta)
-        world_y = self.robot.y + pixel_x * math.sin(theta) + pixel_y * math.cos(theta)
+        world_x = meters_to_pixels(self.robot.x_m) + pixel_x * math.cos(theta) - pixel_y * math.sin(theta)
+        world_y = meters_to_pixels(self.robot.y_m) + pixel_x * math.sin(theta) + pixel_y * math.cos(theta)
         return world_x, world_y, theta
 
     def add_movement(self, movement):
@@ -127,17 +137,30 @@ class Output:
         old_position = self.position_deg
         speed, target_deg, stop = self.movement_queue[0]
 
+        signed_speed = speed / 100 * MAX_WHEEL_SPEED_DEG_PER_S
+        if target_deg < 0:
+            signed_speed = -signed_speed 
+        
+        new_position = self.position_deg + dt * signed_speed
+
         if stop:
             if target_deg >= 0:
-                self.position_deg = min(target_deg, self.position_deg + dt * speed/100 * MAX_WHEEL_SPEED_DEG_PER_S)
+                self.position_deg = min(target_deg, new_position)
             else:
-                self.position_deg = max(target_deg, self.position_deg + dt * speed/100 * MAX_WHEEL_SPEED_DEG_PER_S)
+                self.position_deg = max(target_deg, new_position) 
         else:
-            self.position_deg += dt * speed/100 * MAX_WHEEL_SPEED_DEG_PER_S
+            self.position_deg = new_position
 
         difference = self.position_deg - old_position
-
-        if self.position_deg >= target_deg:
+        
+        movement_finished = False
+  
+        if target_deg >= 0 and self.position_deg >= target_deg:
+            movement_finished = True
+        elif target_deg < 0 and self.position_deg <= target_deg:
+            movement_finished = True
+        
+        if movement_finished:
             self.position_deg = 0
             with data_lock:
                 self.movement_queue.pop(0)
@@ -145,15 +168,15 @@ class Output:
                 self.working = False
 
         return difference
-
+    
 # ===========================
 # ROBOT SIMULATION CLASS
 # ===========================
 
 class RobotSim:
     def __init__(self):
-        self.x = 100.0
-        self.y = 100.0
+        self.x_m = 0.1
+        self.y_m = 0.1
         self.theta = 0.7
         self.width = ROBOT_WIDTH_M
         self.height = ROBOT_HEIGHT_M
@@ -177,7 +200,7 @@ class RobotSim:
 
         # Rotate robot according to theta
         rotated = pygame.transform.rotate(surface, -math.degrees(self.theta))
-        rect = rotated.get_rect(center=(self.x, self.y))
+        rect = rotated.get_rect(center=(meters_to_pixels(self.x_m), meters_to_pixels(self.y_m)))
         screen.blit(rotated, rect.topleft)
 
         # Draw inputs and outputs
@@ -209,16 +232,16 @@ class RobotSim:
         delta_left = self.output[self.movementWheel0].move_engine(dt)
         delta_right = self.output[self.movementWheel1].move_engine(dt)
 
-        v_left = math.radians(delta_left) * self.wheel_radius / dt
-        v_right = math.radians(delta_right) * self.wheel_radius / dt
+        v_left = math.radians(delta_left) * self.wheel_radius 
+        v_right = math.radians(delta_right) * self.wheel_radius 
 
         v = (v_right + v_left) / 2
         omega = (v_right - v_left) / self.wheel_distance
 
         with data_lock:
-            self.theta += omega * dt
-            self.x += v * math.cos(self.theta)
-            self.y += v * math.sin(self.theta)
+            self.theta += omega
+            self.x_m += v * math.cos(self.theta)
+            self.y_m += v * math.sin(self.theta)
             self.theta = math.atan2(math.sin(self.theta), math.cos(self.theta))  # normalize
 
 # ===========================
@@ -230,12 +253,13 @@ robot = RobotSim()
 
 # Initialize wheels
 robot.output[0] = Output(robot, (0, robot.wheel_distance/2), robot.wheel_radius)
-robot.movementWheel1 = 0
+robot.movementWheel0 = 0
 robot.output[3] = Output(robot, (0, -robot.wheel_distance/2), robot.wheel_radius)
-robot.movementWheel0 = 3
+robot.movementWheel1 = 3
 
 # Initialize color sensor
 robot.input[0] = Input(robot, ((COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT),0), 0, 0.01, (255,0,0), 'circle')
+robot.input[3] = Input(robot, ((COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT+0.02),0), 0, 0.01, (0,255,0), 'circle')
 
 # Start physics simulation thread
 def _simulation_loop():

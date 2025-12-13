@@ -2,9 +2,10 @@
 SIMULATION = True
 
 from ev3dev2.sensor.lego import ColorSensor
-from ev3dev2.sensor import INPUT_1
+from ev3dev2.sensor import INPUT_1, INPUT_4
 from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_D
 from ev3dev2.led import Leds
+from ev3dev2.sensor.lego import UltrasonicSensor
 from time import sleep
 
 large_motor_B = LargeMotor(OUTPUT_A)
@@ -15,7 +16,8 @@ forward = 10
 sensor = ColorSensor(INPUT_1)
 sensor.mode = 'COL-REFLECT'   # Lectura de luz reflejada (0–100)
 
-
+distance_sensor = UltrasonicSensor(INPUT_4)
+distance_sensor.mode = 'US-DIST-CM'
 
 def rotate(motor1, motor2, speed, degrees, brake, block):
         motor1.on_for_degrees(speed=speed, degrees=degrees, brake=brake, block=False)
@@ -37,7 +39,9 @@ def main():# Valor inicial (color actual)
 
     while True:
         valor = sensor.reflected_light_intensity
-        # print(valor)
+        print(valor)
+        sth = distance_sensor.distance_centimeters
+        print(sth)
         # Si hay un cambio fuerte respecto al valor inicial → deja de imprimir
         if 0 <= valor < 20:   # Ajusta la sensibilidad
             print("Cambio detectado dejo de printear")
@@ -54,7 +58,7 @@ def main():# Valor inicial (color actual)
     moveForward(large_motor_B, large_motor_C,10,FORWARD_SECOND_STEP, True, True)
     print("i moved")
     right = False
-
+    rotate(large_motor_B, large_motor_C,10,-ROTATION_DEGREES*2, False, True)
     rotate(large_motor_B, large_motor_C,10,ROTATION_DEGREES, True, False)
     for i in range(0,300):
             valor = sensor.reflected_light_intensity
@@ -71,7 +75,7 @@ def main():# Valor inicial (color actual)
     print("here")
     if not right:
             
-            rotate(large_motor_B, large_motor_C,10,-ROTATION_DEGREES*2, False, False)
+            
             for i in range(0,300):
                     valor = sensor.reflected_light_intensity
                     print(valor)
