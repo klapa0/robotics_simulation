@@ -105,8 +105,9 @@ if SIMULATION:
     def delay(period):
        time.sleep(period)
     import threading
+    import test
     import simulation.robot as robot
-    _main_thread = threading.Thread(target=main, daemon=True)
+    _main_thread = threading.Thread(target=test.test,args=(main,0.1), daemon=True)
     _main_thread.start()
     robot.start()
 else:
