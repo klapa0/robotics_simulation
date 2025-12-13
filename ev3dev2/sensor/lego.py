@@ -34,7 +34,6 @@ class UltrasonicSensor:
     def _calculate_distance(self):
         sensor_x_m, sensor_y_m, sensor_world_theta = self.input.get_position()
         min_dist_m = float('inf')
-        print(self.input.get_position())
         for obs in robot.obstacles:
             points = obs.get_corners() 
             
