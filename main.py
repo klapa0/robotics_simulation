@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+SIMULATION = True
+
+from ev3dev2.sensor.lego import ColorSensor
+from ev3dev2.sensor import INPUT_1
+from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_D
+from ev3dev2.led import Leds
+from time import sleep
+
+large_motor_B = LargeMotor(OUTPUT_A)
+large_motor_C = LargeMotor(OUTPUT_D)
+grados180 = 195
+forward = 10
+
+sensor = ColorSensor(INPUT_1)
+sensor.mode = 'COL-REFLECT'   # Lectura de luz reflejada (0–100)
+
+
+
+def rotate(motor1, motor2, speed, degrees, brake, block):
+        motor1.on_for_degrees(speed=speed, degrees=degrees, brake=brake, block=False)
+        motor2.on_for_degrees(speed=speed, degrees=-degrees, brake=brake, block=block)
+
+def moveForward(motor1, motor2, speed, degrees, brake, block):
+        motor1.on_for_degrees(speed=speed, degrees=degrees, brake=brake, block=False)
+        motor2.on_for_degrees(speed=speed, degrees=degrees, brake=brake, block=block)
+
+def main():# Valor inicial (color actual)
+
+    valor_inicial = sensor.reflected_light_intensity
+
+    print("Valor inicial:", valor_inicial)
+    print("Comenzando a printear...")
+
+
+    #First step: Finding Black line
+
+    while True:
+        valor = sensor.reflected_light_intensity
+        # print(valor)
+        # Si hay un cambio fuerte respecto al valor inicial → deja de imprimir
+        if 0 <= valor < 20:   # Ajusta la sensibilidad
+            print("Cambio detectado dejo de printear")
+            #rotate(large_motor_B, large_motor_C, grados180)
+            moveForward(large_motor_B, large_motor_C,10, 0, True, True)
+            break
+
+        moveForward(large_motor_B, large_motor_C,10,forward, True, True)
+    leds = Leds()
+    leds.set_color('LEFT', 'GREEN')
+    #Second step: Detecting the correct degrees
+    FORWARD_SECOND_STEP = 1000
+    ROTATION_DEGREES = 200
+    moveForward(large_motor_B, large_motor_C,10,FORWARD_SECOND_STEP, True, True)
+    print("i moved")
+    right = False
+
+    rotate(large_motor_B, large_motor_C,10,ROTATION_DEGREES, True, False)
+    for i in range(0,300):
+            valor = sensor.reflected_light_intensity
+            # print(valor)
+            # Si hay un cambio fuerte respecto al valor inicial → deja de imprimir
+            if 0 <= valor < 20:   # Ajusta la sensibilidad
+                    print("Cambio detectado dejo de printear")
+                    #rotate(large_motor_B, large_motor_C, grados180)
+                    moveForward(large_motor_B, large_motor_C,10, 0, True, True)
+                    right = True 
+                    break
+            delay(0.05)
+
+    print("here")
+    if not right:
+            
+            rotate(large_motor_B, large_motor_C,10,-ROTATION_DEGREES*2, False, False)
+            for i in range(0,300):
+                    valor = sensor.reflected_light_intensity
+                    print(valor)
+                    # Si hay un cambio fuerte respecto al valor inicial → deja de imprimir
+                    if 0 <= valor < 20:   # Ajusta la sensibilidad
+                            print("Cambio detectado dejo de printear")
+                            #rotate(large_motor_B, large_motor_C, grados180)
+                            moveForward(large_motor_B, large_motor_C,10, 0, True, True) 
+                            break
+                    delay(0.05)
+
+
+if SIMULATION:
+    import time
+    def delay(period):
+       time.sleep(period)
+    import threading
+    import simulation.robot as robot
+    _main_thread = threading.Thread(target=main, daemon=True)
+    _main_thread.start()
+    robot.start()
+else:
+      main()
+
