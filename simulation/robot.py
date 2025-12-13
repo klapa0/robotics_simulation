@@ -127,7 +127,10 @@ class Output:
 
     def add_movement(self, movement):
         self.working = True
-        self.movement_queue.append(movement)
+        if movement[0] < 0:
+            self.movement_queue.append((-movement[0],-movement[1],movement[2]))
+        else:
+            self.movement_queue.append(movement)
 
     def move_engine(self, dt):
         if not self.movement_queue:
