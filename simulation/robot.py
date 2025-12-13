@@ -2,270 +2,298 @@ import threading
 import time
 import math
 import pygame
+import numpy as np
 
-HOW_MANY_PIXELS_ONE_CENTIMETER = 7
-data_lock = threading.Lock()
+# ===========================
+# CONFIGURATION CONSTANTS
+# ===========================
 
+# Conversion
+PIXELS_PER_CM = 7
+
+# Robot physical properties (meters)
+ROBOT_WIDTH_M = 0.20
+ROBOT_HEIGHT_M = 0.15
+WHEEL_RADIUS_M = 0.05
+WHEEL_DISTANCE_M = 0.15
+MAX_WHEEL_SPEED_DEG_PER_S = 4000
+COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT = ROBOT_WIDTH_M/2 +0.01
+# Robot display (screen) properties
+SCREEN_MARGIN_FRONT = 0.01
+SCREEN_BORDER_RADIUS = 4
+SCREEN_COLOR_BODY = (120, 120, 120)
+SCREEN_COLOR_DISPLAY = (170, 200, 220)
+
+# LEDs
+LED_WIDTH_RATIO = 1 / 8
+LED_HEIGHT_RATIO = 1 / 2
+LED_DEFAULT_COLORS = [(0, 0, 0), (255, 0, 0)]
+
+# Wheels
+WHEEL_COLOR = (0, 0, 0)
+
+# Map / Pygame window
+SCREEN_WIDTH = 1400
+SCREEN_HEIGHT = 800
+LINE_THICKNESS_CM = 5
+LINE_LENGTH_CM = 100
+
+# ===========================
+# HELPER FUNCTIONS
+# ===========================
+
+def meters_to_pixels(meters: float) -> int:
+    return int(meters * 100 * PIXELS_PER_CM)
+
+def cm_to_pixels(cm: float) -> int:
+    return int(cm * PIXELS_PER_CM)
+
+# ===========================
+# INPUT / SENSOR CLASS
+# ===========================
 
 class Input:
-    def __init__(self, robot ,position, orientation, figure, color, shape):
+    def __init__(self, robot, position, orientation, size, color, shape):
         self.robot = robot
         self.position = position
         self.theta = orientation
-        self.figure = figure
+        self.size = size
         self.color = color
         self.shape = shape
 
     def draw(self, screen):
-        world_x, world_y, world_theta = self.getPositionInPixel()
+        world_x, world_y, worlSCREEN_HEIGHTd_theta = self.get_position_in_pixel()
         if self.shape == 'rect':
-            width, height = self.figure
+            width, height = self.size
             surface = pygame.Surface((width, height), pygame.SRCALPHA)
             surface.fill(self.color)
             rotated = pygame.transform.rotate(surface, -math.degrees(world_theta))
             rect = rotated.get_rect(center=(world_x, world_y))
             screen.blit(rotated, rect.topleft)
         elif self.shape == 'circle':
-            pygame.draw.circle(screen, self.color, (int(world_x), int(world_y)), self.figure*100*HOW_MANY_PIXELS_ONE_CENTIMETER)
+            radius = self.size * 100 * PIXELS_PER_CM
+            pygame.draw.circle(screen, self.color, (int(world_x), int(world_y)), radius)
 
-    def getPositionInPixel(self):
+    def get_position_in_pixel(self):
         dx, dy = self.position
-        pixel_x = dx * HOW_MANY_PIXELS_ONE_CENTIMETER * 100
-        pixel_y = dy * HOW_MANY_PIXELS_ONE_CENTIMETER * 100
+        pixel_x = dx * 100 * PIXELS_PER_CM
+        pixel_y = dy * 100 * PIXELS_PER_CM
         theta = self.robot.theta
         world_x = self.robot.x + pixel_x * math.cos(theta) - pixel_y * math.sin(theta)
         world_y = self.robot.y + pixel_x * math.sin(theta) + pixel_y * math.cos(theta)
         return world_x, world_y, self.theta + self.robot.theta
-    
-    def getFigure(self):
-        if self.shape == 'circle':
-            return self.figure*100*HOW_MANY_PIXELS_ONE_CENTIMETER
-    
-MAX_SPEED_DEGREES_IN_S = 4000
+
+# ===========================
+# OUTPUT / WHEEL CLASS
+# ===========================
 
 class Output:
-    def __init__(self, robot ,wheel_position, wheel_radius):
+    def __init__(self, robot, wheel_position, wheel_radius):
         self.robot = robot
-        #speed and degrees are here
-        self.movement_queue = []
-        self.works = False
-        #position in pixels relative to main robot
+        self.movement_queue = []  # [speed_percent, target_deg, stop_at_end]
+        self.working = False
         self.wheel_position = wheel_position
-        #radius of the wheel in centimeters
         self.wheel_radius = wheel_radius
-        self.position = 0
+        self.position_deg = 0
 
     def draw(self, screen):
-        world_x, world_y, theta = self.getPositionInPixel()
-        
-        # parametry prostokąta reprezentującego koło
-        width = self.wheel_radius * 2  * 100 * HOW_MANY_PIXELS_ONE_CENTIMETER      # długość wzdłuż osi koła
-        height = (self.wheel_radius * 100 * HOW_MANY_PIXELS_ONE_CENTIMETER) // 2       # krótsza część prostokąta
-        
-        # tworzymy powierzchnię prostokąta z przezroczystością
+        world_x, world_y, theta = self.get_position_in_pixel()
+        width = self.wheel_radius * 2 * 100 * PIXELS_PER_CM
+        height = self.wheel_radius * 100 * PIXELS_PER_CM // 2
         surface = pygame.Surface((width, height), pygame.SRCALPHA)
-        surface.fill((0, 0, 0))  # kolor koła szary
-
-        # obracamy prostokąt zgodnie z orientacją robota
+        surface.fill(WHEEL_COLOR)
         rotated = pygame.transform.rotate(surface, -math.degrees(theta))
-
-        # pozycjonujemy prostokąt względem środka robota
         rect = rotated.get_rect(center=(world_x, world_y))
         screen.blit(rotated, rect.topleft)
 
-    def getPositionInPixel(self):
-        """Zwraca pozycję koła w układzie świata"""
+    def get_position_in_pixel(self):
         dx, dy = self.wheel_position
-        pixel_x = dx * HOW_MANY_PIXELS_ONE_CENTIMETER * 100
-        pixel_y = dy * HOW_MANY_PIXELS_ONE_CENTIMETER * 100
+        pixel_x = dx * 100 * PIXELS_PER_CM
+        pixel_y = dy * 100 * PIXELS_PER_CM
         theta = self.robot.theta
         world_x = self.robot.x + pixel_x * math.cos(theta) - pixel_y * math.sin(theta)
         world_y = self.robot.y + pixel_x * math.sin(theta) + pixel_y * math.cos(theta)
         return world_x, world_y, theta
 
-    def isWorking(self):
-        return self.works
-    
-    def addEngineMove(self, movement):
-        #appends speed and degrees and if stop at finish (speed from 0 to 100 as power, degrees, stop)
-        self.works = True
+    def add_movement(self, movement):
+        self.working = True
         self.movement_queue.append(movement)
 
-    def moveEngine(self, dt):
-        if len(self.movement_queue) == 0:
-            self.works = False
+    def move_engine(self, dt):
+        if not self.movement_queue:
+            self.working = False
             return 0
-        
-        old_position = self.position
 
-        if self.movement_queue[0][2]:
-            if self.movement_queue[0][1] >= 0:
-                self.position = min(self.movement_queue[0][1], self.position + dt*self.movement_queue[0][0]/100 * MAX_SPEED_DEGREES_IN_S )
-            elif self.movement_queue[0][1] < 0:
-                self.position = max(self.movement_queue[0][1], self.position + dt*self.movement_queue[0][0]/100 * MAX_SPEED_DEGREES_IN_S )
+        old_position = self.position_deg
+        speed, target_deg, stop = self.movement_queue[0]
+
+        if stop:
+            if target_deg >= 0:
+                self.position_deg = min(target_deg, self.position_deg + dt * speed/100 * MAX_WHEEL_SPEED_DEG_PER_S)
+            else:
+                self.position_deg = max(target_deg, self.position_deg + dt * speed/100 * MAX_WHEEL_SPEED_DEG_PER_S)
         else:
-            self.position = self.position + dt*self.movement_queue[0][0]/100 * MAX_SPEED_DEGREES_IN_S
-        
-        difference = self.position - old_position
+            self.position_deg += dt * speed/100 * MAX_WHEEL_SPEED_DEG_PER_S
 
-        if self.position >= self.movement_queue[0][1]:
-            self.position = 0
+        difference = self.position_deg - old_position
+
+        if self.position_deg >= target_deg:
+            self.position_deg = 0
             with data_lock:
                 self.movement_queue.pop(0)
-            if len(self.movement_queue) == 0:
-                self.works = False
-        
+            if not self.movement_queue:
+                self.working = False
+
         return difference
+
+# ===========================
+# ROBOT SIMULATION CLASS
+# ===========================
 
 class RobotSim:
     def __init__(self):
         self.x = 100.0
         self.y = 100.0
         self.theta = 0.7
-        self.input = [None,None,None,None]
+        self.width = ROBOT_WIDTH_M
+        self.height = ROBOT_HEIGHT_M
+        self.wheel_radius = WHEEL_RADIUS_M
+        self.wheel_distance = WHEEL_DISTANCE_M
 
-        self.output = [None,None,None,None]
-        self.width = 0.20  # szerokość robota w pikselach
-        self.height = 0.15
-        self.robot_wheels_size_m = 0.05
-        self.robot_wheels_distance_m = 0.15
-        self.movementWheel1 = -1
+        self.input = [None] * 4
+        self.output = [None] * 4
         self.movementWheel0 = -1
-        self.led_active = True
-        self.led_color = [(0,0,0),(255,0,0)]
-        # motors, sensors etc.
+        self.movementWheel1 = -1
+
+        self.led_color = LED_DEFAULT_COLORS.copy()
 
     def draw(self, screen):
-        # tworzymy powierzchnię prostokąta robota
-        surface = pygame.Surface((self.width*HOW_MANY_PIXELS_ONE_CENTIMETER*100, self.height*HOW_MANY_PIXELS_ONE_CENTIMETER*100), pygame.SRCALPHA)
-        surface.fill((120, 120, 120))  # szary kolor
+        # Create robot body surface
+        surface = pygame.Surface((meters_to_pixels(self.width), meters_to_pixels(self.height)), pygame.SRCALPHA)
+        surface.fill(SCREEN_COLOR_BODY)
 
-        screen_w = int((self.width/2-0.01) * HOW_MANY_PIXELS_ONE_CENTIMETER*100)   # 6 cm
-        screen_h = int((self.height-0.02) * HOW_MANY_PIXELS_ONE_CENTIMETER*100)   # 3 cm
+        self._draw_screen(surface)
+        self._draw_leds(surface)
 
-        screen_x = self.width * HOW_MANY_PIXELS_ONE_CENTIMETER*100 - screen_w
-        screen_y = int(0.01 * HOW_MANY_PIXELS_ONE_CENTIMETER*100)   # lekko od przodu
-
-        pygame.draw.rect(
-            surface,
-            (20, 20, 20),                 # obudowa
-            (screen_x, screen_y, screen_w, screen_h),
-            border_radius=4
-        )
-
-        pygame.draw.rect(
-            surface,
-            (170, 200, 220),                # „wyświetlacz”
-            (screen_x+2, screen_y+2, screen_w-4, screen_h-4),
-            border_radius=3
-        )
-
-        led1_w = int((self.width/8) * HOW_MANY_PIXELS_ONE_CENTIMETER*100)
-        led1_h = led1_w//2
-        led1_y = self.height * HOW_MANY_PIXELS_ONE_CENTIMETER * 100/2
-        pygame.draw.rect(
-            surface,
-            self.led_color[1],                 # obudowa
-            (screen_x-led1_w, led1_y +led1_h/2, led1_w, led1_h),
-            border_radius=4
-        )
-        pygame.draw.rect(
-            surface,
-            self.led_color[0],                 # obudowa
-            (screen_x-led1_w, led1_y -led1_h/2, led1_w, led1_h),
-            border_radius=4
-        )
-        # obracamy prostokąt zgodnie z orientacją robota
+        # Rotate robot according to theta
         rotated = pygame.transform.rotate(surface, -math.degrees(self.theta))
-
-        # pozycjonujemy prostokąt względem środka robota
         rect = rotated.get_rect(center=(self.x, self.y))
         screen.blit(rotated, rect.topleft)
 
-        # rysujemy sensory
-        for s in self.input:
-            if s:
-                s.draw(screen)
-        # rysujemy koła
-        for w in self.output:
-            if w:
-                w.draw(screen)
+        # Draw inputs and outputs
+        for sensor in self.input:
+            if sensor: sensor.draw(screen)
+        for wheel in self.output:
+            if wheel: wheel.draw(screen)
 
-    def getPositionInPixel(self):
-        return(self.x * 100 * HOW_MANY_PIXELS_ONE_CENTIMETER,self.y * 100 * HOW_MANY_PIXELS_ONE_CENTIMETER, self.theta)
-    
+    def _draw_screen(self, surface):
+        screen_w = meters_to_pixels(self.width/2 - SCREEN_MARGIN_FRONT)
+        screen_h = meters_to_pixels(self.height - 0.02)
+        screen_x = meters_to_pixels(self.width) - screen_w
+        screen_y = cm_to_pixels(1)
+
+        pygame.draw.rect(surface, (20, 20, 20), (screen_x, screen_y, screen_w, screen_h), border_radius=SCREEN_BORDER_RADIUS)
+        pygame.draw.rect(surface, SCREEN_COLOR_DISPLAY, (screen_x+2, screen_y+2, screen_w-4, screen_h-4), border_radius=SCREEN_BORDER_RADIUS-1)
+
+    def _draw_leds(self, surface):
+        led_w = meters_to_pixels(self.width * LED_WIDTH_RATIO)
+        led_h = led_w // 2
+        led_y = meters_to_pixels(self.height / 2)
+
+        for i, color in enumerate(self.led_color):
+            offset = (i - 0.5) * led_h * 2
+            pygame.draw.rect(surface, color, (meters_to_pixels(self.width/2) - led_w, led_y + offset, led_w, led_h), border_radius=4)
+
     def update_physics(self, dt):
-        """Oblicza nową pozycję na podstawie prędkości kół (Model Differential Drive)"""
-        # Pobranie prędkości liniowych kół (V = omega * r)
-        delta_left_deg = self.output[self.movementWheel0].moveEngine(dt)
-        delta_right_deg = self.output[self.movementWheel1].moveEngine(dt)
+        """Update robot position using differential drive model"""
+        delta_left = self.output[self.movementWheel0].move_engine(dt)
+        delta_right = self.output[self.movementWheel1].move_engine(dt)
 
-        # prędkość liniowa kół w m/s
-        v_left = math.radians(delta_left_deg) * self.robot_wheels_size_m / dt
-        v_right = math.radians(delta_right_deg) * self.robot_wheels_size_m / dt
+        v_left = math.radians(delta_left) * self.wheel_radius / dt
+        v_right = math.radians(delta_right) * self.wheel_radius / dt
 
-        # prędkość robota i prędkość kątowa
         v = (v_right + v_left) / 2
-        omega = (v_right - v_left) / self.robot_wheels_distance_m 
+        omega = (v_right - v_left) / self.wheel_distance
 
         with data_lock:
             self.theta += omega * dt
             self.x += v * math.cos(self.theta)
             self.y += v * math.sin(self.theta)
+            self.theta = math.atan2(math.sin(self.theta), math.cos(self.theta))  # normalize
 
-            # Normalizacja kąta (-pi do pi)
-            self.theta = math.atan2(math.sin(self.theta), math.cos(self.theta))
+# ===========================
+# INITIALIZE ROBOT
+# ===========================
 
-
-
+data_lock = threading.Lock()
 robot = RobotSim()
 
-robot.output[0] = Output(robot, (0,robot.robot_wheels_distance_m/2), robot.robot_wheels_size_m)
+# Initialize wheels
+robot.output[0] = Output(robot, (0, robot.wheel_distance/2), robot.wheel_radius)
 robot.movementWheel1 = 0
-robot.output[3] = Output(robot, (0,-robot.robot_wheels_distance_m/2), robot.robot_wheels_size_m)
+robot.output[3] = Output(robot, (0, -robot.wheel_distance/2), robot.wheel_radius)
 robot.movementWheel0 = 3
 
-robot.input[0] = Input(robot, ((robot.width/2 +0.01),0), 0, 0.01,(255,0,0),'circle')
+# Initialize color sensor
+robot.input[0] = Input(robot, ((COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT),0), 0, 0.01, (255,0,0), 'circle')
 
-
-
-# start simulation thread
+# Start physics simulation thread
 def _simulation_loop():
     dt = 0.01
     while True:
-        # update motors and robot pose
         robot.update_physics(dt)
         time.sleep(dt)
 
 _sim_thread = threading.Thread(target=_simulation_loop, daemon=True)
 _sim_thread.start()
 
+# ===========================
+# MAP / ENVIRONMENT SETUP
+# ===========================
 
-
-import numpy as np
-
-SCREEN_WIDTH = 1000
-SCREEN_HEIGHT = 800
-
-
-# Tworzymy mapę całego ekranu
-# 0 = czarny (linia), 255 = biały (tło)
 map_array = np.full((SCREEN_WIDTH, SCREEN_HEIGHT), 255, dtype=np.uint8)
-
-# narysuj pionową linię przez środek
 center_x = SCREEN_HEIGHT // 2
-line_thickness = 5 * HOW_MANY_PIXELS_ONE_CENTIMETER
-line_width = 50 * HOW_MANY_PIXELS_ONE_CENTIMETER
-map_array[0:line_width, center_x - line_thickness//2 : center_x + line_thickness//2] = 0
-
-# Konwersja mapy na powierzchnię Pygame
-# musimy zamienić 2D array na 3 kanały RGB
-rgb_map = np.stack([map_array]*3, axis=-1)  # shape (H,W,3)
+line_thickness_px = cm_to_pixels(LINE_THICKNESS_CM)
+line_width_px = cm_to_pixels(LINE_LENGTH_CM)
+map_array[0:line_width_px, center_x - line_thickness_px//2:center_x + line_thickness_px//2] = 0
+rgb_map = np.stack([map_array]*3, axis=-1)
 map_surface = pygame.surfarray.make_surface(rgb_map)
 pygame.surfarray.blit_array(map_surface, rgb_map)
 
+class Obstacle:
+    """Represents a rectangular obstacle in the world"""
+    def __init__(self, x, y, width, height):
+        # x, y = center of the obstacle
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
 
+    def get_corners(self):
+        """Return list of 4 corners of the rectangle"""
+        hw, hh = self.width/2, self.height/2
+        return [
+            (self.x - hw, self.y - hh),
+            (self.x + hw, self.y - hh),
+            (self.x + hw, self.y + hh),
+            (self.x - hw, self.y + hh)
+        ]
 
+    def draw(self, screen):
+        rect = pygame.Rect(
+            meters_to_pixels(self.x - self.width/2),
+            meters_to_pixels(self.y - self.height/2),
+            meters_to_pixels(self.width),
+            meters_to_pixels(self.height)
+        )
+        pygame.draw.rect(screen, (100,100,100), rect)
+obstacles = [
+    Obstacle(LINE_LENGTH_CM/100, SCREEN_HEIGHT/2 /PIXELS_PER_CM/100 - 0.18, 0.1, 0.1),
+    Obstacle(LINE_LENGTH_CM/100, SCREEN_HEIGHT/2 /PIXELS_PER_CM/100 + 0.18, 0.1, 0.1),
+]
+# ===========================
+# START PYGAME
+# ===========================
 
 def start():
     pygame.init()
@@ -275,24 +303,17 @@ def start():
 
     running = True
     while running:
-        # obsługa zdarzeń
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        # czyszczenie ekranu
         screen.blit(map_surface, (0, 0))
-
-        # rysowanie robota i jego elementów
-        with data_lock:  # blokada, żeby uniknąć konfliktów z wątkiem symulacji
+        for obs in obstacles:
+            obs.draw(screen)
+        with data_lock:
             robot.draw(screen)
 
-        # aktualizacja ekranu
         pygame.display.flip()
-
-        # limit FPS
         clock.tick(60)
 
     pygame.quit()
-
-

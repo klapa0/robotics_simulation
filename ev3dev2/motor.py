@@ -2,11 +2,7 @@ import sys
 import os
 import time
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# add it to Python's search path
 sys.path.append(project_root)
-
-# now you can import robot.py
 from simulation import robot
 
 
@@ -16,9 +12,9 @@ class LargeMotor:
     
     def on_for_degrees(self,speed = 10, degrees = 0, brake = True, block = True):
         with robot.data_lock:
-            self.output.addEngineMove((speed,degrees,brake))
+            self.output.add_movement((speed,degrees,brake))
         if block:
-            while self.output.isWorking():
+            while self.output.working:
                 time.sleep(0.01)
 
 OUTPUT_A = robot.robot.output[0]

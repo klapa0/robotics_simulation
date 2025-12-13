@@ -1,11 +1,7 @@
 import sys
 import os
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# add it to Python's search path
 sys.path.append(project_root)
-
-# now you can import robot.py
 from simulation import robot
 
 class ColorSensor:
@@ -15,8 +11,8 @@ class ColorSensor:
         self._reflected_light_intensity = 0
 
     def update(self):
-        x,y,_ = self.input.getPositionInPixel()
-        radius = self.input.getFigure()
+        x,y,_ = self.input.get_position_in_pixel()
+        radius = self.input.size
         ix = int(x)
         iy = int(y)
         self._reflected_light_intensity = robot.map_array[ix, iy]
@@ -24,5 +20,5 @@ class ColorSensor:
 
     @property
     def reflected_light_intensity(self):
-        self.update()  # automatyczne wywołanie przy odczycie
+        self.update()  
         return self._reflected_light_intensity
