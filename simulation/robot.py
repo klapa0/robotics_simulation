@@ -62,7 +62,7 @@ class Input:
         self.shape = shape
 
     def draw(self, screen):
-        world_x, world_y, worlSCREEN_HEIGHTd_theta = self.get_position_in_pixel()
+        world_x, world_y, world_theta = self.get_position_in_pixel()
         if self.shape == 'rect':
             width, height = self.size
             surface = pygame.Surface((width, height), pygame.SRCALPHA)
