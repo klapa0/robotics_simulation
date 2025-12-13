@@ -11,11 +11,24 @@ class ColorSensor:
         self._reflected_light_intensity = 0
 
     def update(self):
-        x,y,_ = self.input.get_position_in_pixel()
-        radius = self.input.size
-        ix = int(x)
-        iy = int(y)
-        self._reflected_light_intensity = robot.map_array[ix, iy]
+        cx, cy, _ = self.input.get_position_in_pixel()
+        r_px = max(1, int(self.input.size * 100 * robot.PIXELS_PER_CM))
+        min_x = max(0, int(cx - r_px))
+        max_x = min(robot.SCREEN_WIDTH, int(cx + r_px))
+        min_y = max(0, int(cy - r_px))
+        max_y = min(robot.SCREEN_HEIGHT, int(cy + r_px))
+        total = 0.0
+        count = 0
+        
+        for x in range(min_x, max_x):
+            for y in range(min_y, max_y):
+                if (x - cx)**2 + (y - cy)**2 <= r_px**2:
+                    value = robot.map_array[x, y]
+                    total += value
+                    count += 1
+
+        mean_val = total / count if count > 0 else 255
+        self._reflected_light_intensity = int(round((mean_val / 255) * 100))
 
 
     @property
@@ -29,7 +42,7 @@ class UltrasonicSensor:
     def __init__(self, input):
         self.input = input
         self.mode = 'US-DIST-CM'
-        self.fov = math.radians(20)
+        self.fov = math.radians(robot.ULTRASONIC_SENSOR_FOV_DEGREES)
         
     def _calculate_distance(self):
         sensor_x_m, sensor_y_m, sensor_world_theta = self.input.get_position()

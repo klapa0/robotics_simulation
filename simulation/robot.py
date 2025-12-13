@@ -17,7 +17,6 @@ ROBOT_HEIGHT_M = 0.15
 WHEEL_RADIUS_M = 0.02
 WHEEL_DISTANCE_M = 0.15
 MAX_WHEEL_SPEED_DEG_PER_S = 4000
-COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT = ROBOT_WIDTH_M/2 +0.01
 # Robot display (screen) properties
 SCREEN_MARGIN_FRONT = 0.01
 SCREEN_BORDER_RADIUS = 4
@@ -36,7 +35,20 @@ WHEEL_COLOR = (0, 0, 0)
 SCREEN_WIDTH = 1400
 SCREEN_HEIGHT = 800
 LINE_THICKNESS_CM = 5
-LINE_LENGTH_CM = 100
+LINE_LENGTH_CM = 150
+
+# Gate
+DISTANCE_BEETWEEN_OBSTACLES_M = 0.25
+OBSTACLES_RADIUS_M = 0.05
+
+# Sensors config
+COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT = ROBOT_WIDTH_M/2 +0.01
+COLOR_SENSOR_RADIUS = 0.01
+COLOR_SENSOR_RGB = (255,0,0)
+
+ULTRASONIC_SENSOR_FOV_DEGREES = 20
+ULTRASONIC_SENSOR_RGB = (0,255,0)
+ULTRASONIC_SENSOR_POSITION_Y_FROM_MIDDLE = COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT+0.02
 
 # ===========================
 # HELPER FUNCTIONS
@@ -181,6 +193,7 @@ class RobotSim:
         self.x_m = 0.1
         self.y_m = 0.1
         self.theta = 0.7
+        self.set_robot_orientation_degrees(45)
         self.width = ROBOT_WIDTH_M
         self.height = ROBOT_HEIGHT_M
         self.wheel_radius = WHEEL_RADIUS_M
@@ -192,6 +205,9 @@ class RobotSim:
         self.movementWheel1 = -1
 
         self.led_color = LED_DEFAULT_COLORS.copy()
+    
+    def set_robot_orientation_degrees(self,degrees):
+        self.theta = (degrees / 180.0) * math.pi
 
     def draw(self, screen):
         # Create robot body surface
@@ -261,8 +277,8 @@ robot.output[3] = Output(robot, (0, -robot.wheel_distance/2), robot.wheel_radius
 robot.movementWheel1 = 3
 
 # Initialize color sensor
-robot.input[0] = Input(robot, ((COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT),0), 0, 0.01, (255,0,0), 'circle')
-robot.input[3] = Input(robot, ((COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT+0.02),0), 0, 0.01, (0,255,0), 'circle')
+robot.input[0] = Input(robot, ((COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT),0), 0, COLOR_SENSOR_RADIUS, COLOR_SENSOR_RGB, 'circle')
+robot.input[3] = Input(robot, ((ULTRASONIC_SENSOR_POSITION_Y_FROM_MIDDLE),0), 0, 0.01, ULTRASONIC_SENSOR_RGB, 'circle')
 
 # Start physics simulation thread
 def _simulation_loop():
@@ -289,34 +305,27 @@ pygame.surfarray.blit_array(map_surface, rgb_map)
 
 class Obstacle:
     """Represents a rectangular obstacle in the world"""
-    def __init__(self, x, y, width, height):
+    def __init__(self, x, y, radius):
         # x, y = center of the obstacle
         self.x = x
         self.y = y
-        self.width = width
-        self.height = height
+        self.radius = radius
 
     def get_corners(self):
         """Return list of 4 corners of the rectangle"""
-        hw, hh = self.width/2, self.height/2
         return [
-            (self.x - hw, self.y - hh),
-            (self.x + hw, self.y - hh),
-            (self.x + hw, self.y + hh),
-            (self.x - hw, self.y + hh)
+            (self.x - self.radius, self.y - self.radius),
+            (self.x + self.radius, self.y - self.radius),
+            (self.x + self.radius, self.y + self.radius),
+            (self.x - self.radius, self.y + self.radius)
         ]
 
     def draw(self, screen):
-        rect = pygame.Rect(
-            meters_to_pixels(self.x - self.width/2),
-            meters_to_pixels(self.y - self.height/2),
-            meters_to_pixels(self.width),
-            meters_to_pixels(self.height)
-        )
-        pygame.draw.rect(screen, (100,100,100), rect)
+        pygame.draw.circle(screen, (130,200,130), (int(meters_to_pixels(self.x)), int(meters_to_pixels(self.y))), meters_to_pixels(self.radius))
+
 obstacles = [
-    Obstacle(LINE_LENGTH_CM/100, SCREEN_HEIGHT/2 /PIXELS_PER_CM/100 - 0.18, 0.1, 0.1),
-    Obstacle(LINE_LENGTH_CM/100, SCREEN_HEIGHT/2 /PIXELS_PER_CM/100 + 0.18, 0.1, 0.1),
+    Obstacle(LINE_LENGTH_CM/100, SCREEN_HEIGHT/2 /PIXELS_PER_CM/100 - DISTANCE_BEETWEEN_OBSTACLES_M/2-OBSTACLES_RADIUS_M, OBSTACLES_RADIUS_M),
+    Obstacle(LINE_LENGTH_CM/100, SCREEN_HEIGHT/2 /PIXELS_PER_CM/100 + DISTANCE_BEETWEEN_OBSTACLES_M/2+OBSTACLES_RADIUS_M, OBSTACLES_RADIUS_M),
 ]
 # ===========================
 # START PYGAME
