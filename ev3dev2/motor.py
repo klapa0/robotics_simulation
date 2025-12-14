@@ -17,6 +17,17 @@ class LargeMotor:
             while self.output.working:
                 time.sleep(0.01)
 
+class MediumMotor:
+    def __init__(self, output):
+        self.output = output
+    
+    def on_for_degrees(self,speed = 10, degrees = 0, brake = True, block = True):
+        with robot.data_lock:
+            self.output.add_movement((speed,degrees,brake))
+        if block:
+            while self.output.working:
+                time.sleep(0.01)
+
 OUTPUT_A = robot.robot.output[0]
 OUTPUT_B = robot.robot.output[1]
 OUTPUT_C = robot.robot.output[2]

@@ -50,6 +50,19 @@ ULTRASONIC_SENSOR_FOV_DEGREES = 20
 ULTRASONIC_SENSOR_RGB = (0,255,0)
 ULTRASONIC_SENSOR_POSITION_Y_FROM_MIDDLE = COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT+0.02
 
+# Ramp / Ball
+RAMP_LENGTH_M = 0.10             
+RAMP_GEAR_RATIO = 2         
+RAMP_MAX_ANGLE_DEG = 120
+RAMP_MIN_ANGLE_DEG = -30
+RAMP_COLOR = (0, 0, 255)
+BALL_RADIUS_M = 0.03            
+BALL_COLOR = (255, 100, 0)
+GRAVITY_MS2 = 9.81               
+
+
+RAMP_X_OFFSET_M = -ROBOT_WIDTH_M / 2.5
+
 # ===========================
 # HELPER FUNCTIONS
 # ===========================
@@ -104,6 +117,9 @@ class Input:
         world_y = ry + dx * math.sin(r_theta) + dy * math.cos(r_theta)
         # Zwraca orientację czujnika względem świata
         return world_x, world_y, self.theta + r_theta
+    
+    def reset(self):
+        pass
 
 # ===========================
 # OUTPUT / WHEEL CLASS
@@ -183,6 +199,171 @@ class Output:
                 self.working = False
 
         return difference
+
+    def reset(self):
+        self.movement_queue.clear()
+        self.position_deg = 0
+        self.working = False
+
+# ===========================
+# OUTPUT RAMP CLASS
+# ===========================
+class OutputBallRamp(Output):
+    def __init__(self, robot, wheel_position, wheel_radius, ramp_gear_ratio=RAMP_GEAR_RATIO):
+        super().__init__(robot, wheel_position, wheel_radius)
+        self.ramp_gear_ratio = ramp_gear_ratio
+        
+        self.ramp = Ramp(self)
+        self.ball = Ball(self.ramp)
+        
+        self.motor_position_deg = 0
+
+    def add_movement(self, movement):
+        super().add_movement(movement)
+
+    def move_engine(self, dt):
+        motor_delta_deg = super().move_engine(dt)
+        self.motor_position_deg += motor_delta_deg
+        
+        ramp_delta_deg = motor_delta_deg / self.ramp_gear_ratio
+        ramp_delta_rad = math.radians(ramp_delta_deg)
+        
+        new_angle_rad = self.ramp.current_angle_rad - ramp_delta_rad
+        
+        min_angle_rad = math.radians(RAMP_MIN_ANGLE_DEG)
+        max_angle_rad = math.radians(RAMP_MAX_ANGLE_DEG)
+        self.ramp.current_angle_rad = max(min_angle_rad, min(max_angle_rad, new_angle_rad))
+        
+        self.ball.update_physics(dt)
+        
+        return motor_delta_deg
+
+    def draw(self, screen):
+        self.ramp.draw(screen)
+        self.ball.draw(screen)
+        pass
+
+    def reset(self):
+        super().reset()
+        self.ball.reset()
+        self.ramp.reset()
+
+
+class Ball:
+    def __init__(self, ramp):
+        self.ramp = ramp
+        self.position_ratio = 0.0
+        self.velocity_m_per_s = 0.0
+        self.theta = 0.0
+        self.x_m = 0.0
+        self.y_m = 0.0
+        self.ball_released = False
+        
+    def update_physics(self, dt):
+        if self.ball_released:
+            self.x_m+=self.velocity_m_per_s * math.cos(self.theta)*dt
+            self.y_m+=self.velocity_m_per_s * math.sin(self.theta)*dt
+        else:
+            angle_rad = self.ramp.current_angle_rad
+            angle_deg = math.degrees(angle_rad)
+
+            if angle_deg >= 0:
+                acceleration_m_per_s2 = 0.0
+            else:
+                slope_angle_rad = abs(angle_rad)
+                acceleration_m_per_s2 = GRAVITY_MS2 * math.sin(slope_angle_rad)
+
+            if acceleration_m_per_s2 > 0:
+                self.velocity_m_per_s += acceleration_m_per_s2 * dt
+
+            distance_m = self.velocity_m_per_s * dt
+            new_position_m = self.position_ratio * RAMP_LENGTH_M + distance_m
+
+            if new_position_m > RAMP_LENGTH_M:
+                self.position_ratio = 1.0
+                self.ball_released = True
+                end_x, end_y, ramp_theta = self.ramp.get_end_position_in_pixel()
+                self.theta = ramp_theta
+                self.x_m = end_x / PIXELS_PER_CM / 100
+                self.y_m = end_y / PIXELS_PER_CM / 100
+            else:
+                self.position_ratio = new_position_m / RAMP_LENGTH_M
+
+    def draw(self, screen):
+        if self.ball_released:
+            pygame.draw.circle(screen, BALL_COLOR, (meters_to_pixels(self.x_m), meters_to_pixels(self.y_m)), meters_to_pixels(BALL_RADIUS_M))
+        else:
+            pivot_x, pivot_y, _ = self.ramp.output.get_position_in_pixel()
+            end_x, end_y, ramp_theta = self.ramp.get_end_position_in_pixel()
+            angle_for_transform = ramp_theta 
+
+            # Odległość piłki od punktu obrotu
+            distance_from_pivot_m = RAMP_LENGTH_M * self.position_ratio 
+
+            # 2. Obliczenie pozycji piłki w świecie (względem pivotu)
+
+            # Piłka porusza się wzdłuż wektora rampy.
+            dx_world = distance_from_pivot_m * math.cos(angle_for_transform)
+            dy_world = distance_from_pivot_m * math.sin(angle_for_transform)
+
+            world_x = pivot_x + meters_to_pixels(dx_world)
+            world_y = pivot_y + meters_to_pixels(dy_world)
+
+            # 3. Rysowanie
+            pygame.draw.circle(screen, BALL_COLOR, (int(world_x), int(world_y)), meters_to_pixels(BALL_RADIUS_M))
+    
+    def reset(self):
+        self.position_ratio = 0.0
+        self.velocity_m_per_s = 0.0
+        self.theta = 0.0
+        self.x_m = 0.0
+        self.y_m = 0.0
+        self.ball_released = False
+
+class Ramp:
+    def __init__(self, output_motor):
+        self.output = output_motor
+        self.current_angle_rad = 1.4
+        self.ramp_rotation = math.pi
+        
+    def get_end_position_in_pixel(self):
+        pivot_x, pivot_y, robot_theta = self.output.get_position_in_pixel()
+        world_angle =  robot_theta + self.ramp_rotation
+
+        dx = RAMP_LENGTH_M * math.cos(self.ramp_rotation)
+        dy = RAMP_LENGTH_M * math.sin(self.ramp_rotation)
+        
+        dx = meters_to_pixels(dx * math.cos(self.current_angle_rad))
+        dy = meters_to_pixels(dy * math.sin(self.current_angle_rad))
+
+        end_x = pivot_x + dx * math.cos(robot_theta) - dy * math.sin(robot_theta)
+        end_y = pivot_y + dx * math.sin(robot_theta) + dy * math.cos(robot_theta)
+        
+        return end_x, end_y, world_angle
+
+    def draw(self, screen):        
+        
+        pivot_x, pivot_y, robot_theta = self.output.get_position_in_pixel()
+        end_x, end_y, world_angle       =  self.get_end_position_in_pixel()
+        total_angle_rad =  world_angle
+        total_angle_deg = -math.degrees(total_angle_rad) 
+        
+        length_px = int(max(5,abs(meters_to_pixels(RAMP_LENGTH_M) * math.cos(self.current_angle_rad))))
+        thickness_px = meters_to_pixels(0.015) 
+
+        base_surface = pygame.Surface((length_px, thickness_px), pygame.SRCALPHA)
+        pygame.draw.rect(base_surface, (0,0,0), (0, 0, length_px, thickness_px))
+        pygame.draw.rect(base_surface, RAMP_COLOR, (0, meters_to_pixels(0.0029), length_px, meters_to_pixels(0.015-0.005)))
+        
+        rotated = pygame.transform.rotate(base_surface, total_angle_deg)
+        rect = rotated.get_rect(center=(pivot_x-(pivot_x-end_x)/2, (pivot_y-(pivot_y-end_y)/2)))
+        screen.blit(rotated, rect.topleft)
+    
+    def reset(self):
+        self.current_angle_rad = 1.4
+
+
+
     
 # ===========================
 # ROBOT SIMULATION CLASS
@@ -203,6 +384,7 @@ class RobotSim:
         self.output = [None] * 4
         self.movementWheel0 = -1
         self.movementWheel1 = -1
+        self.mediumEngine = -1
 
         self.led_color = LED_DEFAULT_COLORS.copy()
     
@@ -210,7 +392,7 @@ class RobotSim:
         self.theta = (degrees / 180.0) * math.pi
 
     def draw(self, screen):
-        # Create robot body surface
+        #robot.output[2] = OutputBallRamp(robot, (RAMP_X_OFFSET_M, 0), 0) Create robot body surface
         surface = pygame.Surface((meters_to_pixels(self.width), meters_to_pixels(self.height)), pygame.SRCALPHA)
         surface.fill(SCREEN_COLOR_BODY)
 
@@ -247,6 +429,8 @@ class RobotSim:
             pygame.draw.rect(surface, color, (meters_to_pixels(self.width/2) - led_w, led_y + offset, led_w, led_h), border_radius=4)
 
     def update_physics(self, dt):
+        if self.mediumEngine >=0:
+            self.output[self.mediumEngine].move_engine(dt)
         """Update robot position using differential drive model"""
         delta_left = self.output[self.movementWheel0].move_engine(dt)
         delta_right = self.output[self.movementWheel1].move_engine(dt)
@@ -262,6 +446,19 @@ class RobotSim:
             self.x_m += v * math.cos(self.theta)
             self.y_m += v * math.sin(self.theta)
             self.theta = math.atan2(math.sin(self.theta), math.cos(self.theta))  # normalize
+    
+    def reset(self):
+        for input in self.input:
+            if input:
+                input.reset()
+        for output in self.output:
+            if output:
+                output.reset()
+    
+    def set_position_m_from_line(self,y):
+        line_position = (SCREEN_HEIGHT / 2 / PIXELS_PER_CM / 100)
+        self.y_m = line_position - y
+
 
 # ===========================
 # INITIALIZE ROBOT
@@ -276,6 +473,8 @@ robot.movementWheel0 = 0
 robot.output[3] = Output(robot, (0, -robot.wheel_distance/2), robot.wheel_radius)
 robot.movementWheel1 = 3
 
+robot.output[1] = OutputBallRamp(robot, (RAMP_X_OFFSET_M, 0), 0)
+robot.mediumEngine = 1
 # Initialize color sensor
 robot.input[0] = Input(robot, ((COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT),0), 0, COLOR_SENSOR_RADIUS, COLOR_SENSOR_RGB, 'circle')
 robot.input[3] = Input(robot, ((ULTRASONIC_SENSOR_POSITION_Y_FROM_MIDDLE),0), 0, 0.01, ULTRASONIC_SENSOR_RGB, 'circle')

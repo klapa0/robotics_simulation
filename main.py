@@ -6,12 +6,13 @@ WHEEL_DISTANCE_M = 0.15
 
 from ev3dev2.sensor.lego import ColorSensor
 from ev3dev2.sensor import INPUT_1, INPUT_4
-from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_D
+from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_D, OUTPUT_B, MediumMotor
 from ev3dev2.led import Leds
 from ev3dev2.sensor.lego import UltrasonicSensor
 from time import sleep
 large_motor_B = LargeMotor(OUTPUT_A)
 large_motor_C = LargeMotor(OUTPUT_D)
+medium_motor = MediumMotor(OUTPUT_B)
 grados180 = 195
 forward = 1
 
@@ -39,6 +40,9 @@ def moveForward(motor1, motor2, speed, degrees, brake, block):
         motor2.on_for_degrees(speed=speed, degrees=degrees, brake=brake, block=block)
 
 def main():# Valor inicial (color actual)
+    medium_motor.on_for_degrees(speed=1, degrees=190, brake=True, block=True)
+    # medium_motor.on_for_degrees(speed=1, degrees=-90, brake=True, block=True)
+    delay(1)
 
     valor_inicial = sensor.reflected_light_intensity
 
@@ -113,3 +117,4 @@ if SIMULATION:
 else:
       main()
 
+ 
