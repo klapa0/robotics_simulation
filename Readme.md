@@ -116,7 +116,7 @@ Modify `simulation/robot.py` under **CONFIGURATION CONSTANTS**:
 | DISTANCE_BEETWEEN_OBSTACLES_M             |Distance between the obstacles forming the gate (m)|
 | OBSTACLES_RADIUS_M                        |Radius of the individual obstacles (m)|
 | COLOR_SENSOR_DISTANCE_FROM_CENTER_OF_ROBOT|X-axis position of the color sensor relative to the robot center (m)|
-| COLOR_SENSOR_RADIUS                       |Radius of the color sensor for visualization (m)|
+| COLOR_SENSOR_RADIUS                       |Radius of the color sensor for scanning area and visualization (m)|
 | COLOR_SENSOR_RGB                          |RGB color of the color sensor visualization|
 | ULTRASONIC_SENSOR_FOV_DEGREES             |Field of View (FOV) angle of the ultrasonic sensor (degr)|
 | ULTRASONIC_SENSOR_RGB                     |RGB color of the ultrasonic sensor visualization|
